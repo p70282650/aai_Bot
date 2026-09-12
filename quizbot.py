@@ -3911,7 +3911,7 @@ async def autorun_worker(app, autorun_id, quiz_id, interval_minutes, wait_before
             # 🇮🇳 IST time use करो (UTC नहीं)
             now = datetime.now(tz=IST)
 
-            # Schedule-wait: either HH:MM schedule or interval-based wait
+            # ✅ **WAIT SECTION with polling** - हर 30 sec check करो कि कोई quiz चल तो नहीं रहा
             if schedule_time:
                 next_ts = next_occurrence_from_hhmm(schedule_time, ref_dt=now)
                 wait_seconds = (next_ts - now).total_seconds()
@@ -3920,24 +3920,58 @@ async def autorun_worker(app, autorun_id, quiz_id, interval_minutes, wait_before
                     cur.execute("UPDATE autoruns SET next_run = ? WHERE id = ?", (next_ts.isoformat(), autorun_id))
                     conn.commit()
                 logging.info(f"⏰ Autorun {autorun_id}: waiting until scheduled time {next_ts.isoformat()} (in {wait_seconds:.0f}s) - IST")
-                try:
-                    await asyncio.sleep(max(0, wait_seconds))
-                except asyncio.CancelledError:
-                    logging.info(f"Autorun worker {autorun_id} cancelled while waiting for schedule")
-                    return
+                
+                remaining = wait_seconds
+                while remaining > 0:
+                    # ✅ हर 30 seconds check करो
+                    if SUPPORT_GROUP_ID in GROUP_GAMES:
+                        game = GROUP_GAMES[SUPPORT_GROUP_ID]
+                        if game.get("quiz_started"):
+                            running_type = "AUTORUN" if game.get("autorun_id") else "MANUAL"
+                            logging.warning(
+                                f"⏳ Autorun {autorun_id}: {running_type} quiz already running "
+                                f"(quiz_id={game.get('quiz_id')}). Postponing..."
+                            )
+                            # पूरे wait को skip करो
+                            remaining = 0
+                            break
+                    
+                    sleep_time = min(30, remaining)
+                    try:
+                        await asyncio.sleep(sleep_time)
+                    except asyncio.CancelledError:
+                        logging.info(f"Autorun worker {autorun_id} cancelled during schedule wait")
+                        return
+                    remaining -= sleep_time
+                
+                # अगर किसी ने interrupt किया तो loop को restart करो
+                if remaining <= 0 and SUPPORT_GROUP_ID in GROUP_GAMES:
+                    if GROUP_GAMES[SUPPORT_GROUP_ID].get("quiz_started"):
+                        logging.warning(f"Autorun {autorun_id}: interrupted by running quiz, retrying next cycle")
+                        continue  # अगले cycle तक retry करो
+
             else:
-                # interval-based: set next_run and sleep interval
-                next_ts = now + timedelta(minutes=interval_minutes)
-                with sqlite3.connect(DB_FILE) as conn:
-                    cur = conn.cursor()
-                    cur.execute("UPDATE autoruns SET next_run = ? WHERE id = ?", (next_ts.isoformat(), autorun_id))
-                    conn.commit()
-                logging.info(f"⏰ Autorun {autorun_id}: waiting {interval_minutes} minutes until {next_ts.isoformat()} - IST")
-                try:
-                    await asyncio.sleep(interval_minutes * 60)
-                except asyncio.CancelledError:
-                    logging.info(f"Autorun worker {autorun_id} cancelled during interval wait")
-                    return
+                # Interval wait
+                remaining = interval_minutes * 60
+                logging.info(f"⏰ Autorun {autorun_id}: waiting {interval_minutes} minutes")
+                
+                while remaining > 0:
+                    if SUPPORT_GROUP_ID in GROUP_GAMES:
+                        game = GROUP_GAMES[SUPPORT_GROUP_ID]
+                        if game.get("quiz_started"):
+                            running_type = "AUTORUN" if game.get("autorun_id") else "MANUAL"
+                            logging.warning(
+                                f"⏳ Autorun {autorun_id}: {running_type} quiz already running. "
+                                f"Waiting for it to finish..."
+                            )
+                    
+                    sleep_time = min(30, remaining)  # हर 30 sec check करो
+                    try:
+                        await asyncio.sleep(sleep_time)
+                    except asyncio.CancelledError:
+                        logging.info(f"Autorun worker {autorun_id} cancelled during interval wait")
+                        return
+                    remaining -= sleep_time
 
             # ---------- SERIAL SECTION: Acquire lock before posting/starting ----------
             acquired = False
@@ -3946,6 +3980,16 @@ async def autorun_worker(app, autorun_id, quiz_id, interval_minutes, wait_before
                 await AUTORUN_SERIAL_LOCK.acquire()
                 acquired = True
                 logging.info(f"✅ Autorun {autorun_id}: acquired serial lock")
+
+                # ✅ **FINAL CHECK**: सबसे आखिर में भी check करो (race condition के लिए)
+                if SUPPORT_GROUP_ID in GROUP_GAMES:
+                    game = GROUP_GAMES[SUPPORT_GROUP_ID]
+                    if game.get("quiz_started"):
+                        logging.warning(
+                            f"🛑 Autorun {autorun_id}: Race condition detected! "
+                            f"Quiz started by another process. Releasing lock."
+                        )
+                        continue  # अगले cycle तक wait करो
 
                 # Wait if a quiz is already running in support group
                 attempt_count = 0
