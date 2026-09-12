@@ -2287,6 +2287,7 @@ async def save_edited_negative(update: Update, context: ContextTypes.DEFAULT_TYP
 # ==========================================
 # 🎯 SINGLE READY BUTTON DRIVEN ACTIVATION
 # ==========================================
+
 async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Auto-joins users and sets dynamic counter to verify activation benchmarks (race-safe)."""
     try:
@@ -2326,6 +2327,10 @@ async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
         user_id = user.id
         user_name = user.username or user.first_name or "Player"
         logging.info(f"handle_ready_click invoked: chat_id={chat_id} msg_id={message_id} user_id={user_id}")
+
+        # ✅ **FIXED**: Define is_private here at the top
+        is_private = str(chat.type) == "private" or (hasattr(chat.type, "value") and getattr(chat.type, "value", "") == "private")
+        logging.info(f"Chat type: {chat.type}, is_private: {is_private}, SUPPORT_GROUP_ID: {SUPPORT_GROUP_ID}, chat_id: {chat_id}")
 
         # Parse callback data safely
         data = query.data or ""
@@ -2379,7 +2384,7 @@ async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 "is_private": False,
                 "quiz_paused": False,
                 "consecutive_no_answers": 0,
-                "previous_panel_message_id": None,  # 👈 NAYI LINE - पुराने panel track करने के लिए
+                "previous_panel_message_id": None,
                 # lock to avoid double-starts
                 "start_lock": asyncio.Lock()
             }
@@ -2398,13 +2403,16 @@ async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
         game.setdefault("quiz_started", False)
         game.setdefault("quiz_paused", False)
         game.setdefault("consecutive_no_answers", 0)
-        game.setdefault("previous_panel_message_id", None)  # 👈 NAYI LINE
+        game.setdefault("previous_panel_message_id", None)
         # Ensure lock exists
         if "start_lock" not in game or not isinstance(game["start_lock"], asyncio.Lock):
             game["start_lock"] = asyncio.Lock()
 
         # ✅ **NEW CHECK**: अगर कोई autorun चल रहा है तो block करो
+        logging.info(f"Checking autorun block: is_private={is_private}, SUPPORT_GROUP_ID={SUPPORT_GROUP_ID}, chat_id={chat_id}")
+        
         if not is_private and SUPPORT_GROUP_ID and chat_id == SUPPORT_GROUP_ID:
+            logging.info(f"This is SUPPORT_GROUP_ID, checking if autorun is running...")
             if SUPPORT_GROUP_ID in GROUP_GAMES:
                 game_in_support = GROUP_GAMES[SUPPORT_GROUP_ID]
                 # अगर कोई OTHER autorun चल रहा है
@@ -2418,6 +2426,12 @@ async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         show_alert=True
                     )
                     return
+                else:
+                    logging.info(f"No autorun running, proceeding normally")
+            else:
+                logging.info(f"SUPPORT_GROUP_ID not in GROUP_GAMES, proceeding normally")
+        else:
+            logging.info(f"Not in support group or is private, proceeding normally")
 
         # If another routine is starting the quiz, politely tell the user and return
         if game.get("starting"):
@@ -2453,7 +2467,7 @@ async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
         logging.info(f"Chat {chat_id} ready_count={ready_count}")
 
         # Determine threshold (private vs group)
-        is_private_chat = str(chat.type) == "private" or (hasattr(chat.type, "value") and getattr(chat.type, "value", "") == "private")
+        is_private_chat = is_private  # ✅ USE THE VARIABLE WE DEFINED ABOVE
         min_ready_required = 1 if is_private_chat else 2
 
         # If threshold reached, do an atomic start guarded by start_lock
