@@ -2287,7 +2287,6 @@ async def save_edited_negative(update: Update, context: ContextTypes.DEFAULT_TYP
 # ==========================================
 # 🎯 SINGLE READY BUTTON DRIVEN ACTIVATION
 # ==========================================
-
 async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Auto-joins users and sets dynamic counter to verify activation benchmarks (race-safe)."""
     try:
@@ -2326,11 +2325,11 @@ async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         user_id = user.id
         user_name = user.username or user.first_name or "Player"
-        logging.info(f"handle_ready_click invoked: chat_id={chat_id} msg_id={message_id} user_id={user_id}")
-
-        # ✅ **FIXED**: Define is_private here at the top
+        
+        # ✅ **MOST IMPORTANT**: is_private को सबसे पहले define करो!
         is_private = str(chat.type) == "private" or (hasattr(chat.type, "value") and getattr(chat.type, "value", "") == "private")
-        logging.info(f"Chat type: {chat.type}, is_private: {is_private}, SUPPORT_GROUP_ID: {SUPPORT_GROUP_ID}, chat_id: {chat_id}")
+        
+        logging.info(f"handle_ready_click invoked: chat_id={chat_id} msg_id={message_id} user_id={user_id} is_private={is_private}")
 
         # Parse callback data safely
         data = query.data or ""
@@ -2381,7 +2380,7 @@ async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 "poll_message_ids": {},
                 "setup_message_id": message_id,
                 "setup_panel_text": query.message.text,
-                "is_private": False,
+                "is_private": is_private,  # ✅ यहाँ भी use करो
                 "quiz_paused": False,
                 "consecutive_no_answers": 0,
                 "previous_panel_message_id": None,
@@ -2409,13 +2408,11 @@ async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
             game["start_lock"] = asyncio.Lock()
 
         # ✅ **NEW CHECK**: अगर कोई autorun चल रहा है तो block करो
-        logging.info(f"Checking autorun block: is_private={is_private}, SUPPORT_GROUP_ID={SUPPORT_GROUP_ID}, chat_id={chat_id}")
-        
+        # यह check सिर्फ SUPPORT_GROUP_ID में करो, अन्य groups में नहीं
         if not is_private and SUPPORT_GROUP_ID and chat_id == SUPPORT_GROUP_ID:
-            logging.info(f"This is SUPPORT_GROUP_ID, checking if autorun is running...")
             if SUPPORT_GROUP_ID in GROUP_GAMES:
                 game_in_support = GROUP_GAMES[SUPPORT_GROUP_ID]
-                # अगर कोई OTHER autorun चल रहा है
+                # अगर कोई autorun चल रहा है
                 if game_in_support.get("autorun_id") and game_in_support.get("quiz_started"):
                     logging.warning(
                         f"🛑 Manual quiz blocked: Autorun {game_in_support.get('autorun_id')} "
@@ -2426,12 +2423,6 @@ async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         show_alert=True
                     )
                     return
-                else:
-                    logging.info(f"No autorun running, proceeding normally")
-            else:
-                logging.info(f"SUPPORT_GROUP_ID not in GROUP_GAMES, proceeding normally")
-        else:
-            logging.info(f"Not in support group or is private, proceeding normally")
 
         # If another routine is starting the quiz, politely tell the user and return
         if game.get("starting"):
@@ -2467,8 +2458,7 @@ async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
         logging.info(f"Chat {chat_id} ready_count={ready_count}")
 
         # Determine threshold (private vs group)
-        is_private_chat = is_private  # ✅ USE THE VARIABLE WE DEFINED ABOVE
-        min_ready_required = 1 if is_private_chat else 2
+        min_ready_required = 1 if is_private else 2
 
         # If threshold reached, do an atomic start guarded by start_lock
         if ready_count >= min_ready_required and not game.get("quiz_started"):
@@ -2489,7 +2479,7 @@ async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     game.pop("starting", None)
                     return
 
-                # 🔥 NAYI FIX: Current ready panel का button hide करो
+                # 🔥 Current ready panel का button hide करो
                 try:
                     await query.edit_message_reply_markup(reply_markup=None)
                 except Exception as e:
@@ -2501,7 +2491,7 @@ async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     except Exception as e2:
                         logging.warning(f"Fallback edit_message_reply_markup failed: {e2}")
 
-                # 🟢 NAYI FIX: अगर कोई previous panel message था (autorun का), तो उसका भी button hide करो
+                # अगर कोई previous panel message था (autorun का), तो उसका भी button hide करो
                 if game.get("previous_panel_message_id"):
                     try:
                         await context.bot.edit_message_reply_markup(
@@ -2539,7 +2529,7 @@ async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
             return
 
-        # Otherwise just update the ready-count button with GREEN COLOR (style: success)
+        # Otherwise just update the ready-count button with GREEN COLOR
         try:
             # ✅ **GREEN COLOR BUTTON** - style: success
             live_btn = {
