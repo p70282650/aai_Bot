@@ -2379,7 +2379,7 @@ async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 "is_private": False,
                 "quiz_paused": False,
                 "consecutive_no_answers": 0,
-                "previous_panel_message_id": None,  # 👈 NAYI LINE - puraane panel track karne ke liye
+                "previous_panel_message_id": None,  # 👈 NAYI LINE - पुराने panel track करने के लिए
                 # lock to avoid double-starts
                 "start_lock": asyncio.Lock()
             }
@@ -2402,6 +2402,22 @@ async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
         # Ensure lock exists
         if "start_lock" not in game or not isinstance(game["start_lock"], asyncio.Lock):
             game["start_lock"] = asyncio.Lock()
+
+        # ✅ **NEW CHECK**: अगर कोई autorun चल रहा है तो block करो
+        if not is_private and SUPPORT_GROUP_ID and chat_id == SUPPORT_GROUP_ID:
+            if SUPPORT_GROUP_ID in GROUP_GAMES:
+                game_in_support = GROUP_GAMES[SUPPORT_GROUP_ID]
+                # अगर कोई OTHER autorun चल रहा है
+                if game_in_support.get("autorun_id") and game_in_support.get("quiz_started"):
+                    logging.warning(
+                        f"🛑 Manual quiz blocked: Autorun {game_in_support.get('autorun_id')} "
+                        f"already running in support group"
+                    )
+                    await query.answer(
+                        "⏳ एक autorun quiz अभी चल रही है! कृपया प्रतीक्षा करें।",
+                        show_alert=True
+                    )
+                    return
 
         # If another routine is starting the quiz, politely tell the user and return
         if game.get("starting"):
@@ -2448,7 +2464,7 @@ async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
             game["starting"] = True
             logging.info(f"Threshold reached in chat {chat_id} (ready={ready_count}, min={min_ready_required}) - attempting to start quiz {quiz_id}")
             try:
-                await query.answer("🎯 Target achieved! Quiz start ho rahi hai...")
+                await query.answer("🎯 Target achieved! Quiz start हो रही है...")
             except Exception:
                 pass
 
@@ -2459,7 +2475,7 @@ async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     game.pop("starting", None)
                     return
 
-                # 🔥 NAYI FIX: Current ready panel ka button hide karo
+                # 🔥 NAYI FIX: Current ready panel का button hide करो
                 try:
                     await query.edit_message_reply_markup(reply_markup=None)
                 except Exception as e:
@@ -2471,7 +2487,7 @@ async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     except Exception as e2:
                         logging.warning(f"Fallback edit_message_reply_markup failed: {e2}")
 
-                # 🟢 NAYI FIX: Agar koi previous panel message tha (autorun ka), toh uska bhi button hide karo
+                # 🟢 NAYI FIX: अगर कोई previous panel message था (autorun का), तो उसका भी button hide करो
                 if game.get("previous_panel_message_id"):
                     try:
                         await context.bot.edit_message_reply_markup(
@@ -2509,9 +2525,14 @@ async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
             return
 
-        # Otherwise just update the ready-count button
+        # Otherwise just update the ready-count button with GREEN COLOR (style: success)
         try:
-            live_btn = InlineKeyboardButton(text=f"I am ready!  ({ready_count})", callback_data=f"ready_{quiz_id}")
+            # ✅ **GREEN COLOR BUTTON** - style: success
+            live_btn = {
+                "text": f"I am ready! ({ready_count})",
+                "callback_data": f"ready_{quiz_id}",
+                "style": "success"  # 🟢 GREEN COLOR
+            }
             await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup([[live_btn]]))
         except Exception as e:
             logging.debug(f"Could not update ready-button markup: {e}")
