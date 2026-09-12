@@ -829,10 +829,10 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("❌ Quiz setup processing setup abandoned.", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
     
-# start handler 
+# start handler
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        # Broadcast ke liye Chat ID aur Type database me save karein
+        # Broadcast के लिए Chat ID और Type database में save करें
         chat_id = update.message.chat.id
         chat_type = update.message.chat.type
 
@@ -854,7 +854,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if chat_id in GROUP_GAMES:
                 game = GROUP_GAMES[chat_id]
                 
-                # 1. Purane Welcome Message ke buttons remove karein
+                # 1. Purane Welcome Message के buttons remove करें
                 if "welcome_message_id" in game:
                     try:
                         await context.bot.edit_message_reply_markup(
@@ -865,7 +865,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     except Exception:
                         pass
                 
-                # 2. Agar koi dynamic ready panel active hai toh uske buttons bhee remove karein
+                # 2. अगर कोई dynamic ready panel active है तो उसके buttons भी remove करें
                 if "setup_message_id" in game:
                     try:
                         await context.bot.edit_message_reply_markup(
@@ -876,7 +876,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     except Exception:
                         pass
 
-                # 3. Agar koi purana pause message chal raha hai toh uske buttons bhee remove karein
+                # 3. अगर कोई पुराना pause message चल रहा है तो उसके buttons भी remove करें
                 if "pause_message_id" in game:
                     try:
                         await context.bot.edit_message_reply_markup(
@@ -924,12 +924,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 time_disp = f"{timer} sec" if timer < 60 else f"{timer // 60} min"
                 db_neg_val = negative_value if negative_value is not None else 0.0
                 
-                # NEW CHECK: Agar iss group me quiz already chal rahi ho toh naya panel na post karein
-                if not is_private and chat_id in GROUP_GAMES and GROUP_GAMES[chat_id].get("quiz_started"):
-                    await update.message.reply_text(
-                        "⚠️ A quiz is already running in this group. Please use /stop or wait for the current quiz results before starting a new quiz."
-                    )
-                    return
+                # ✅ **NEW CHECK**: अगर इस group में quiz पहले से चल रही है तो नया शुरू मत करो
+                if not is_private and chat_id in GROUP_GAMES:
+                    if GROUP_GAMES[chat_id].get("quiz_started"):
+                        # Quiz अभी चल रही है - नया quiz शुरू मत करो
+                        await update.message.reply_text(
+                            "⚠️ <b>एक quiz पहले से ही इस group में चल रही है!</b>\n\n"
+                            "कृपया /stop से पहली quiz बंद करें या परिणाम का इंतज़ार करें।",
+                            parse_mode="HTML"
+                        )
+                        return
+                    else:
+                        # Quiz चल नहीं रही - पुरानी entry को साफ करो
+                        GROUP_GAMES.pop(chat_id, None)
 
                 init_text = (
                     f"<blockquote>🎲 Get ready for the quiz!</blockquote>\n\n"
@@ -942,11 +949,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "The quiz will begin when at least 2 people are ready to play. Send /stop to stop it."
                 )
                 
-                # 🌟 FIX: Raw dictionary payload use kiya button ko Green colour dene ke liye
+                # 🌟 FIX: Raw dictionary payload use किया button को Green colour देने के लिए
                 raw_button = {
                     "text": "I am ready!",
                     "callback_data": f"ready_{quiz_id}",
-                    "style": "success"  # Hara (Green) rang lagane ke liye
+                    "style": "success"  # Hara (Green) rang लगाने के लिए
                 }
                 kb = [[raw_button]]
                 
@@ -962,7 +969,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     GROUP_GAMES[chat_id]["setup_message_id"] = quiz_panel_msg.message_id
                 return
 
-        # Welcome message text layout se pehle active quiz check
+        # Welcome message text layout से पहले active quiz check
         if is_private and check_active_quiz_creation(update.message.from_user.id, context):
             await update.message.reply_text(
                 "⚠️ **You have an unfinished quiz.** Please finish creating your quiz or send /cancel.\n\n"
@@ -979,11 +986,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "👥 Add the bot to a group and start quizzes\n"
             "🤖 Welcome to AI Auto-Quiz Generator Bot!\n\n"
             "<blockquote>⚡ Commands Layout:</blockquote>\n"
-            "👉 `/autoquiz` - Naya AI Quiz generate karne ki step-by-step process shuru karein.\n"
+            "👉 `/autoquiz` - Naya AI Quiz generate karne ki step-by-step process shuru करें.\n"
             f"📢 Owner Details: ID `{OWNER_ID}`"
         )
         
-        # 🌟 FIX: Welcome panel ke buttons ko bhi custom color diya (Blue aur Green)
+        # 🌟 FIX: Welcome panel के buttons को भी custom color दिया (Blue और Green)
         if is_private:
             kb = [
                 [{"text": "🚀 Create New Quiz", "callback_data": "btn_newquiz", "style": "success"}],
