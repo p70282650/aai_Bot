@@ -2675,12 +2675,20 @@ async def send_next_group_poll(chat_id, context):
             logging.warning(f"Game not found for chat {chat_id}")
             return
         
-        # ✅ FIX: Immediately check if quiz is stopped
+        # ✅ **NEW CHECK**: Immediately check if quiz is stopped
         if game.get("quiz_paused") or not game.get("quiz_started"):
             logging.info(f"Quiz stopped/paused for chat {chat_id}")
             return
             
         quiz_id = game["quiz_id"]
+        
+        # ✅ Log करो कि कौन सी quiz चल रही है
+        autorun_id = game.get("autorun_id")
+        quiz_type = "AUTORUN" if autorun_id else "MANUAL"
+        logging.info(
+            f"📤 Sending Q{game['current_q']} for {quiz_type} quiz "
+            f"(quiz_id={quiz_id}, autorun_id={autorun_id})"
+        )
         
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -2733,7 +2741,7 @@ async def send_next_group_poll(chat_id, context):
             except Exception as e:
                 logging.warning(f"Context message failed: {e}")
 
-        # ✅ FIX: Check again before sending poll
+        # ✅ **NEW CHECK**: Check again before sending poll
         if chat_id not in GROUP_GAMES or GROUP_GAMES[chat_id].get("quiz_paused"):
             logging.info(f"Quiz stopped before sending poll for chat {chat_id}")
             return
@@ -2819,12 +2827,12 @@ async def send_next_group_poll(chat_id, context):
         
         logging.info(f"📤 Poll sent for Q{game['current_q']}")
         
-        # ✅ FIX: Store current task reference
+        # ✅ **NEW**: Store current task reference
         async def wait_and_next():
             try:
                 await asyncio.sleep(raw_timer)
                 
-                # ✅ FIX: Check again before proceeding
+                # ✅ **NEW CHECK**: Check again before proceeding
                 if chat_id not in GROUP_GAMES:
                     logging.info(f"Chat {chat_id} removed, stopping poll wait")
                     return
@@ -2854,7 +2862,7 @@ async def send_next_group_poll(chat_id, context):
                 
                 if not answers_received:
                     game["consecutive_no_answers"] += 1
-                    if game["consecutive_no_answers"] >= 500:
+                    if game["consecutive_no_answers"] >= 5:
                         game["quiz_paused"] = True
                         await context.bot.send_message(
                             chat_id=chat_id,
@@ -2879,7 +2887,7 @@ async def send_next_group_poll(chat_id, context):
             except Exception as e:
                 logging.error(f"Error in wait_and_next: {e}")
         
-        # ✅ FIX: Store the task
+        # ✅ **NEW**: Store the task
         current_task = asyncio.create_task(wait_and_next())
         game["current_task"] = current_task
         
