@@ -2594,9 +2594,6 @@ async def handle_stop_quiz_from_pause(update: Update, context: ContextTypes.DEFA
         
         await compile_group_leaderboard(chat_id, context)
         
-        # ✅ FIX: यहाँ भी GROUP_GAMES.pop() को REMOVE किया है
-        # GROUP_GAMES.pop(chat_id, None)  # ❌ REMOVE THIS - Let cleanup handler do it
-        
         logging.info(f"🕐 Cleanup will happen automatically in 10 minutes for chat {chat_id}")
         
     except Exception as e:
@@ -2656,8 +2653,8 @@ async def stop_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Show stop message
         await update.message.reply_text(
-            "<b>Quiz stop ho gaya!</b>\n\n"
-            "🏁 Final Result dikha raha hoon...",
+            "<b>Quiz stop हो गया!</b>\n\n"
+            "🏁 Final Result दिखा रहे हैं...",
             parse_mode="HTML"
         )
         
